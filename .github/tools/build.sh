@@ -50,9 +50,9 @@ rm -f "$BIN_DIR"/* "$DIST_DIR"/*.zip
 
 echo "Downloading binaries..."
 download_tgz_binary arm
-download_jq_binary arm armv7a
+download_jq_binary arm armv7a-linux-androideabi
 download_tgz_binary arm64
-download_jq_binary arm64 aarch64
+download_jq_binary arm64 aarch64-linux-android
 
 echo
 echo "Creating zip without binaries..."
