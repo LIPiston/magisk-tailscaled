@@ -1,6 +1,6 @@
 {
-  "version": "v2.0.0.1",
-  "versionCode": "02000001",
-  "zipUrl": "https://github.com/LIPiston/magisk-tailscaled/releases/download/v2.0.0.1/Magisk-Tailscaled-v2.0.0.1.zip",
+  "version": "v2.0.1.0",
+  "versionCode": "02000100",
+  "zipUrl": "https://github.com/LIPiston/magisk-tailscaled/releases/download/v2.0.1.0/Magisk-Tailscaled-v2.0.1.0.zip",
   "changelog": "https://raw.githubusercontent.com/LIPiston/magisk-tailscaled/main/CHANGELOG.md"
 }

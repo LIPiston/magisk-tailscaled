@@ -1,3 +1,14 @@
+## v2.0.1.0
+
+- 8c63ab2 ci: add weekly conditional nightly builds
+- a8285f2 fix: use fork release URLs
+- 2d84d91 fix: use fork release URLs
+- 2ced2d9 fix: point arm64 updater to fork release
+- 135e8c9 fix: point arm updater to fork release
+- fd1fb6c fix: point module updater to fork release
+- c7c36fd fix: use fork update metadata
+- 429e1b0 build: fix version bump and add pre-release for build version
+
 ## v2.0.0.1
 
 - 429e1b0 build: fix version bump and add pre-release for build version
