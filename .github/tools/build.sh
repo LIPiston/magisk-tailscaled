@@ -33,7 +33,7 @@ download_jq_binary() {
   local arch="$1"
   local file_arch="$2"
   local url
-  url="$(get_release_asset 'theshoqanebi/jq-build-for-android' "^jq-${file_arch}-linux-android$")"
+  url="$(get_release_asset 'theshoqanebi/jq-build-for-android' "^jq-${file_arch}$")"
   [[ -n "$url" && "$url" != "null" ]] || {
     echo "No jq Android asset found for ${arch}" >&2
     exit 1
