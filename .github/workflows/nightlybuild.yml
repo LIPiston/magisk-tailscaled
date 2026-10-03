@@ -35,6 +35,7 @@ jobs:
             git ls-tree -r --full-tree HEAD
           } | grep -v -E $'\\t(.github/nightly-state.json|module.prop|update(-arm|-arm64)?\\.json|CHANGELOG\\.md)$' | sha256sum | awk '{print $1}')"
           TAILSCALE_TAG="$(gh api repos/anasfanani/tailscale-android-cli/releases/latest --jq .tag_name)"
+          CURRENT_MODULE_VERSION="$(grep '^version=' module.prop | cut -d= -f2)"
 
           LAST_SOURCE_HASH=''
           LAST_TAILSCALE_TAG=''
@@ -46,45 +47,54 @@ jobs:
           NEEDS_BUILD=false
           [[ "$SOURCE_HASH" != "$LAST_SOURCE_HASH" ]] && NEEDS_BUILD=true
           [[ "$TAILSCALE_TAG" != "$LAST_TAILSCALE_TAG" ]] && NEEDS_BUILD=true
+          [[ "$CURRENT_MODULE_VERSION" != "nightly" ]] && NEEDS_BUILD=true
 
           echo "source_hash=$SOURCE_HASH"
           echo "tailscale_tag=$TAILSCALE_TAG"
+          echo "current_module_version=$CURRENT_MODULE_VERSION"
           echo "last_source_hash=${LAST_SOURCE_HASH:-<none>}"
           echo "last_tailscale_tag=${LAST_TAILSCALE_TAG:-<none>}"
           echo "needs_build=$NEEDS_BUILD"
           {
             echo "source_hash=$SOURCE_HASH"
             echo "tailscale_tag=$TAILSCALE_TAG"
+            echo "current_module_version=$CURRENT_MODULE_VERSION"
             echo "needs_build=$NEEDS_BUILD"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set nightly date version
+      - name: Set nightly metadata
         if: steps.check.outputs.needs_build == 'true'
+        id: metadata
         shell: bash
         run: |
           set -euo pipefail
 
-          # Use China Standard Time so the artifact date matches the user's local date.
-          DATE_VERSION="nightly-$(TZ=Asia/Shanghai date +%Y%m%d)"
-          VERSION_CODE="$(TZ=Asia/Shanghai date +%Y%m%d)"
+          # Keep the Magisk module version as "nightly". Use the China date only
+          # for the release tag, asset filenames, and version code.
+          DATE_VERSION="$(TZ=Asia/Shanghai date +%Y%m%d)"
+          RELEASE_TAG="nightly-$DATE_VERSION"
+          VERSION_CODE="$DATE_VERSION"
 
-          sed -i "s/^version=.*/version=$DATE_VERSION/" module.prop
+          sed -i 's/^version=.*/version=nightly/' module.prop
           sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module.prop
 
           for json_file in update.json update-arm.json update-arm64.json; do
-            jq --arg v "$DATE_VERSION" --arg vc "$VERSION_CODE" \
-              '.version = $v | .versionCode = $vc | .zipUrl = "https://github.com/LIPiston/magisk-tailscaled/releases/download/\($v)/Magisk-Tailscaled-\($v).zip" | .changelog = "https://raw.githubusercontent.com/LIPiston/magisk-tailscaled/main/CHANGELOG.md"' \
+            jq --arg v 'nightly' --arg vc "$VERSION_CODE" --arg tag "$RELEASE_TAG" --arg date "$DATE_VERSION" \
+              '.version = $v | .versionCode = $vc | .zipUrl = "https://github.com/LIPiston/magisk-tailscaled/releases/download/\($tag)/Magisk-Tailscaled-\($date).zip" | .changelog = "https://raw.githubusercontent.com/LIPiston/magisk-tailscaled/main/CHANGELOG.md"' \
               "$json_file" > "${json_file}.tmp"
             mv "${json_file}.tmp" "$json_file"
           done
 
+          echo "date_version=$DATE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           grep -E '^(version|versionCode|updateJson)=' module.prop
           cat update.json
 
       - name: Build nightly module packages
         if: steps.check.outputs.needs_build == 'true'
         shell: bash
-        run: ./.github/tools/build.sh
+        run: ./.github/tools/build.sh "${{ steps.metadata.outputs.date_version }}"
 
       - name: Commit generated metadata
         if: steps.check.outputs.needs_build == 'true'
@@ -94,42 +104,36 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add module.prop update.json update-arm.json update-arm64.json
-          git commit -m "build: nightly module metadata"
+          git commit -m "build: update nightly metadata"
           git push origin HEAD:main
 
       - name: Publish nightly release
         if: steps.check.outputs.needs_build == 'true'
-        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(grep '^version=' module.prop | cut -d= -f2)"
+          TAG="${{ steps.metadata.outputs.release_tag }}"
+          DATE="${{ steps.metadata.outputs.date_version }}"
           REPO="$GITHUB_REPOSITORY"
-
-          if gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload "$VERSION" dist/*.zip --repo "$REPO" --clobber
-          else
-            gh release create "$VERSION" dist/*.zip \
-              --repo "$REPO" \
-              --title "Magisk Tailscaled $VERSION" \
-              --notes "Automated nightly build. Android Tailscale source: ${{ steps.check.outputs.tailscale_tag }}." \
-              --prerelease
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          gh release create "$TAG" dist/*.zip \
+            --repo "$REPO" \
+            --title "Magisk Tailscaled nightly $DATE" \
+            --notes "Automated nightly build. Android Tailscale source: ${{ steps.check.outputs.tailscale_tag }}." \
+            --prerelease
 
       - name: Record successful build state
         if: steps.check.outputs.needs_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ steps.release.outputs.version }}"
           cat > .github/nightly-state.json <<EOF
           {
             "source_hash": "${{ steps.check.outputs.source_hash }}",
             "tailscale_android_tag": "${{ steps.check.outputs.tailscale_tag }}",
-            "module_version": "$VERSION"
+            "module_version": "nightly",
+            "artifact_date": "${{ steps.metadata.outputs.date_version }}"
           }
           EOF
           git config user.name 'github-actions[bot]'
