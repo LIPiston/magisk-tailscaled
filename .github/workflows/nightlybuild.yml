@@ -1,0 +1,131 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC (10:00 China Standard Time).
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-build
+  cancel-in-progress: false
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check source and Android Tailscale changes
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Ignore generated version/changelog/state files when detecting source changes.
+          SOURCE_HASH="$({
+            git ls-tree -r --full-tree HEAD
+          } | grep -v -E $'\\t(.github/nightly-state.json|module.prop|update(-arm|-arm64)?\\.json|CHANGELOG\\.md)$' | sha256sum | awk '{print $1}')"
+          TAILSCALE_TAG="$(gh api repos/anasfanani/tailscale-android-cli/releases/latest --jq .tag_name)"
+
+          LAST_SOURCE_HASH=''
+          LAST_TAILSCALE_TAG=''
+          if [[ -f .github/nightly-state.json ]]; then
+            LAST_SOURCE_HASH="$(jq -r '.source_hash // empty' .github/nightly-state.json)"
+            LAST_TAILSCALE_TAG="$(jq -r '.tailscale_android_tag // empty' .github/nightly-state.json)"
+          fi
+
+          NEEDS_BUILD=false
+          [[ "$SOURCE_HASH" != "$LAST_SOURCE_HASH" ]] && NEEDS_BUILD=true
+          [[ "$TAILSCALE_TAG" != "$LAST_TAILSCALE_TAG" ]] && NEEDS_BUILD=true
+
+          echo "source_hash=$SOURCE_HASH"
+          echo "tailscale_tag=$TAILSCALE_TAG"
+          echo "last_source_hash=${LAST_SOURCE_HASH:-<none>}"
+          echo "last_tailscale_tag=${LAST_TAILSCALE_TAG:-<none>}"
+          echo "needs_build=$NEEDS_BUILD"
+          {
+            echo "source_hash=$SOURCE_HASH"
+            echo "tailscale_tag=$TAILSCALE_TAG"
+            echo "needs_build=$NEEDS_BUILD"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Bump module version
+        if: steps.check.outputs.needs_build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="$(grep '^version=' module.prop | cut -d= -f2)"
+          BUILD="$(printf '%s' "$CURRENT" | awk -F. '{print $4}')"
+          if [[ "$BUILD" == "0" ]]; then
+            ./.github/tools/version-bump.sh build
+          else
+            ./.github/tools/version-bump.sh patch
+          fi
+          grep -E '^(version|versionCode|updateJson)=' module.prop
+
+      - name: Build module packages
+        if: steps.check.outputs.needs_build == 'true'
+        shell: bash
+        run: ./.github/tools/build.sh
+
+      - name: Commit generated metadata
+        if: steps.check.outputs.needs_build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add module.prop update.json update-arm.json update-arm64.json CHANGELOG.md
+          git commit -m "build: nightly Magisk module"
+          git push origin HEAD:main
+
+      - name: Publish nightly release
+        if: steps.check.outputs.needs_build == 'true'
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(grep '^version=' module.prop | cut -d= -f2)"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" dist/*.zip --clobber
+          else
+            gh release create "$VERSION" dist/*.zip \
+              --title "Magisk Tailscaled $VERSION (nightly)" \
+              --notes "Automated weekly build. Android Tailscale source: ${{ steps.check.outputs.tailscale_tag }}." \
+              --prerelease
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Record successful build state
+        if: steps.check.outputs.needs_build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release.outputs.version }}"
+          cat > .github/nightly-state.json <<EOF
+          {
+            "source_hash": "${{ steps.check.outputs.source_hash }}",
+            "tailscale_android_tag": "${{ steps.check.outputs.tailscale_tag }}",
+            "module_version": "$VERSION"
+          }
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/nightly-state.json
+          git commit -m "chore: record nightly build state"
+          git push origin HEAD:main
+
+      - name: No changes
+        if: steps.check.outputs.needs_build != 'true'
+        run: echo 'No source or Android Tailscale update; skipping build.'
