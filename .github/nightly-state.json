@@ -1,6 +1,6 @@
 {
-  "source_hash": "813e432831ecf3f66353269088d38b623dfcf1e20e9f935725ed4853ab52daf6",
+  "source_hash": "aa6cd1aa128c2528b350003df9be88817ab187707e540b74235ddd7875a1cd8a",
   "tailscale_android_tag": "v1.98.8-android",
   "module_version": "nightly",
-  "artifact_date": "20261011"
+  "artifact_date": "20261018"
 }
