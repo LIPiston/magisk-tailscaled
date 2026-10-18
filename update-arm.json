@@ -1,6 +1,6 @@
 {
   "version": "nightly",
-  "versionCode": "20261011",
-  "zipUrl": "https://github.com/LIPiston/magisk-tailscaled/releases/download/nightly-20261011/Magisk-Tailscaled-20261011.zip",
+  "versionCode": "20261018",
+  "zipUrl": "https://github.com/LIPiston/magisk-tailscaled/releases/download/nightly-20261018/Magisk-Tailscaled-20261018.zip",
   "changelog": "https://raw.githubusercontent.com/LIPiston/magisk-tailscaled/main/CHANGELOG.md"
 }
